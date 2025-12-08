@@ -1,0 +1,249 @@
+/* Modern UI Design - Inspired by Carbon Design System and Ant Design */
+
+/* Color Palette */
+:root {
+    --primary-color: #0f62fe;
+    --primary-hover: #0353e9;
+    --secondary-color: #161616;
+    --background: #f4f4f4;
+    --surface: #ffffff;
+    --text-primary: #161616;
+    --text-secondary: #525252;
+    --border-color: #e0e0e0;
+    --success-color: #24a148;
+    --warning-color: #f1c21b;
+    --error-color: #da1e28;
+    --info-color: #0043ce;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Global Styles */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Login Page Styles */
+.login-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 80vh;
+    padding: 2rem;
+}
+
+.login-card {
+    background: var(--surface);
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    padding: 3rem;
+    max-width: 450px;
+    width: 100%;
+    border: 1px solid var(--border-color);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.login-header h1 {
+    color: var(--text-primary);
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.login-header p {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.login-form {
+    margin-top: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-label {
+    display: block;
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+/* Sidebar Styles */
+[data-testid="stSidebar"] {
+    background: var(--surface);
+    border-right: 1px solid var(--border-color);
+}
+
+[data-testid="stSidebar"] .sidebar-content {
+    padding: 1rem;
+}
+
+.sidebar-header {
+    padding: 1.5rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+}
+
+.sidebar-header h1 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.sidebar-user-info {
+    padding: 1rem;
+    background: var(--background);
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+
+.sidebar-nav-item {
+    padding: 0.75rem 1rem;
+    margin: 0.25rem 0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-primary);
+    text-decoration: none;
+    display: block;
+}
+
+.sidebar-nav-item:hover {
+    background: var(--background);
+}
+
+.sidebar-nav-item.active {
+    background: var(--primary-color);
+    color: white;
+    font-weight: 500;
+}
+
+/* Button Styles */
+.stButton > button {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 1.5rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.stButton > button:hover {
+    background-color: var(--primary-hover);
+    box-shadow: var(--shadow-md);
+}
+
+/* Input Styles */
+.stTextInput > div > div > input {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(15, 98, 254, 0.1);
+}
+
+/* Metric Cards */
+.metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.2s;
+}
+
+.metric-card:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+}
+
+/* Page Header */
+.page-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.page-header h1 {
+    color: var(--text-primary);
+    font-size: 2rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.page-header p {
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+}
+
+/* Cards */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.card-header {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+}
+
+/* Tables */
+.dataframe {
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+/* Alerts */
+.stAlert {
+    border-radius: 6px;
+    border-left: 4px solid;
+}
+
+/* Selectbox */
+.stSelectbox > div > div > select {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.5rem;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.5rem;
+}
+
+.stTabs [data-baseweb="tab"] {
+    border-radius: 6px 6px 0 0;
+    padding: 0.75rem 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .login-card {
+        padding: 2rem;
+    }
+}
+
