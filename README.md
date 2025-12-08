@@ -236,10 +236,16 @@ To add new features:
 - Data is generated synthetically but follows realistic patterns
 - The system is designed to run on a laptop, so it's not super high-performance
 
-## Author
+## Authors
 
 **Nazmul Nazim**  
 CSE545 Mobile and Wireless Communication Systems
+
+**Co-Authors:**
+- **Shadman Ibne Saiful**  
+  CSE545 Mobile and Wireless Communication Systems
+- **Saheeb Tareque**  
+  CSE545 Mobile and Wireless Communication Systems
 
 ---
 
