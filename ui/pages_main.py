@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from services.device_service import get_device_count_by_status
 from services.reading_service import get_average_metrics
-from services.alert_service import get_active_alerts, get_all_alerts
+from services.alert_service import get_active_alerts, get_all_alerts, acknowledge_alert, resolve_alert
+from models.alert import AlertStatus
 from ui.layout import require_auth, show_sidebar
 
 
@@ -76,8 +77,9 @@ def render():
 
     # Recent Alerts
     st.markdown("### 🚨 Recent Alerts")
-    if active_alerts:
-        for alert in active_alerts[:10]:  # Show top 10
+    recent_alerts = all_alerts[:10]  # Show top 10 most recent alerts (all statuses)
+    if recent_alerts:
+        for alert in recent_alerts:
             severity_color = {
                 "low": "🟢",
                 "medium": "🟡",
@@ -85,10 +87,36 @@ def render():
                 "critical": "🔴"
             }
             emoji = severity_color.get(alert.severity, "⚪")
-            st.markdown(f"{emoji} **{alert.device.name}** - {alert.message}")
-            st.caption(f"Created: {alert.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                st.markdown(f"{emoji} **{alert.device.name}** - {alert.message}")
+                st.caption(f"Created: {alert.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+                if alert.resolved_at:
+                    st.caption(f"Resolved: {alert.resolved_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            with col2:
+                status_badge = {
+                    AlertStatus.ACTIVE: "🔴 Active",
+                    AlertStatus.ACKNOWLEDGED: "🟡 Acknowledged",
+                    AlertStatus.RESOLVED: "🟢 Resolved"
+                }
+                st.markdown(f"**Status:** {status_badge.get(alert.status, 'Unknown')}")
+                
+                # Action buttons
+                if alert.status == AlertStatus.ACTIVE:
+                    if st.button("Acknowledge", key=f"dash_ack_{alert.id}", use_container_width=True):
+                        acknowledge_alert(db, alert.id)
+                        st.rerun()
+                elif alert.status == AlertStatus.ACKNOWLEDGED:
+                    if st.button("Resolve", key=f"dash_resolve_{alert.id}", use_container_width=True):
+                        resolve_alert(db, alert.id)
+                        st.rerun()
+            
+            st.markdown("---")
     else:
-        st.info("No active alerts")
+        st.info("No alerts found")
 
     st.markdown("---")
     st.markdown("### System Information")

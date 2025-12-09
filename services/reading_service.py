@@ -44,11 +44,11 @@ def get_average_metrics(db: Session, hours: int = 24) -> dict:
     ).first()
     
     return {
-        "avg_snr": result.avg_snr or 0.0,
-        "avg_rssi": result.avg_rssi or 0.0,
-        "pdr": (result.pdr or 0.0) * 100.0,  # Convert to percentage
-        "avg_water_level": result.avg_water_level or 0.0,
-        "total_readings": result.total_readings or 0
+        "avg_snr": float(result.avg_snr) if result.avg_snr is not None else 0.0,
+        "avg_rssi": float(result.avg_rssi) if result.avg_rssi is not None else 0.0,
+        "pdr": float(result.pdr) * 100.0 if result.pdr is not None else 0.0,  # Convert to percentage
+        "avg_water_level": float(result.avg_water_level) if result.avg_water_level is not None else 0.0,
+        "total_readings": int(result.total_readings) if result.total_readings is not None else 0
     }
 
 
@@ -74,11 +74,14 @@ def get_pdr_by_spreading_factor(db: Session, hours: int = 24) -> dict:
     
     pdr_by_sf = {}
     for sf, total, delivered in results:
-        pdr = (delivered / total * 100.0) if total > 0 else 0.0
+        # Convert Decimal to int/float for calculations
+        total_int = int(total) if total is not None else 0
+        delivered_int = int(delivered) if delivered is not None else 0
+        pdr = (delivered_int / total_int * 100.0) if total_int > 0 else 0.0
         pdr_by_sf[sf] = {
             "pdr": pdr,
-            "total": total,
-            "delivered": delivered
+            "total": total_int,
+            "delivered": delivered_int
         }
     
     return pdr_by_sf

@@ -12,11 +12,16 @@ from models.device import Device, DeviceStatus
 from services.device_service import get_all_devices, get_device_count_by_status
 from ui.layout import require_auth, show_sidebar
 
-require_auth()
-# Sidebar is shown in main app, not here to avoid duplicate widget keys
+def render():
+    """Render the simulation control page."""
+    # Check authentication - if not authenticated, this will be handled by main app
+    if not st.session_state.get("authenticated", False):
+        st.stop()
+    
+    # Sidebar is shown in main app, not here to avoid duplicate widget keys
 
-# Page header
-st.markdown("""
+    # Page header
+    st.markdown("""
 <div style="
     margin-bottom: 2rem;
     padding-bottom: 1rem;
@@ -37,7 +42,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Get database session
-db = next(get_db())
+try:
+    db = next(get_db())
+except Exception as e:
+    st.error(f"❌ Database connection error: {e}")
+    st.stop()
 
 # Initialize simulator if needed
 if "simulator" not in st.session_state:
@@ -45,16 +54,22 @@ if "simulator" not in st.session_state:
 
 simulator = st.session_state.simulator
 
-# Simulation Status
+# Show reset message if it exists
+if "reset_message" in st.session_state and st.session_state.reset_message:
+    st.success(st.session_state.reset_message)
+    st.session_state.reset_message = None  # Clear after showing
+
+# Simulation Status (show this first so user sees it)
 st.markdown("### 🎮 Simulation Status")
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 
 status_emoji = "🟢 Running" if simulator.is_running else "🔴 Stopped"
-col1.metric("Status", status_emoji)
+col1.metric("Simulation Status", status_emoji)
 
+# Show device count only for simulation context (not redundant - this is simulation-specific)
 device_counts = get_device_count_by_status(db)
-col2.metric("Total Devices", device_counts["total"])
-col3.metric("Online Devices", device_counts["online"])
+col2.metric("Online Devices", device_counts["online"], 
+           help="Number of online devices that will participate in simulation")
 
 st.markdown("---")
 
@@ -64,10 +79,12 @@ st.markdown("### 🎛️ Simulation Controls")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("▶️ Start Simulation", use_container_width=True):
+    if st.button("▶️ Start Simulation", use_container_width=True, type="primary"):
+        simulator.db = db  # Ensure fresh database session
         simulator.start()
-        st.success("Simulation started!")
-        st.rerun()
+        st.session_state.simulation_just_started = True  # Flag to prevent immediate auto-advance
+        st.success("✅ Simulation started! It will automatically advance.")
+        st.rerun()  # Rerun to show updated status
 
 with col2:
     if st.button("⏸️ Pause Simulation", use_container_width=True):
@@ -77,9 +94,28 @@ with col2:
 
 with col3:
     if st.button("🔄 Reset Simulation", use_container_width=True):
-        simulator.reset()
-        st.warning("Simulation reset!")
-        st.rerun()
+        try:
+            # Stop simulation first if running
+            was_running = simulator.is_running
+            if was_running:
+                simulator.stop()
+            # Reset simulation state (does NOT delete database data)
+            simulator.reset()
+            simulator.db = db  # Ensure fresh database session
+            
+            # Store message in session state to persist across rerun
+            if was_running:
+                st.session_state.reset_message = "✅ **Simulation Reset Complete!**\n\n- Simulation stopped\n- Internal state cleared (LoRaWAN stack, device tracking)\n- Database data preserved (devices and readings remain)"
+            else:
+                st.session_state.reset_message = "✅ **Simulation Reset Complete!**\n\n- Internal state cleared (LoRaWAN stack, device tracking)\n- Database data preserved (devices and readings remain)"
+            
+            # Rerun to show updated status and message
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Error resetting simulation: {e}")
+            import traceback
+            with st.expander("Error Details"):
+                st.code(traceback.format_exc())
 
 st.markdown("---")
 
@@ -100,11 +136,23 @@ with col1:
 with col2:
     if st.button("Step Forward", use_container_width=True, type="primary"):
         if simulator.is_running:
-            st.warning("Please pause simulation before manual stepping")
+            st.warning("⚠️ Please pause simulation before manual stepping")
         else:
-            simulator.step(time_delta_seconds=time_delta)
-            st.success(f"Simulation advanced by {time_delta} seconds")
-            st.rerun()
+            try:
+                simulator.db = db  # Ensure fresh database session
+                simulator.step(time_delta_seconds=time_delta, force=True)  # Force step for manual control
+                # Note: simulator.step() already commits internally, but ensure it here
+                try:
+                    db.commit()
+                except:
+                    pass  # Already committed by simulator.step()
+                st.success(f"✅ Simulation advanced by {time_delta} seconds! Readings generated.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Error during manual step: {e}")
+                import traceback
+                with st.expander("Error Details"):
+                    st.code(traceback.format_exc())
 
 st.markdown("---")
 
@@ -143,13 +191,51 @@ with col1:
         st.rerun()
 
 with col2:
-    if st.button("Delete All Devices", type="secondary"):
-        if st.checkbox("Confirm deletion"):
-            count = db.query(Device).count()
-            db.query(Device).delete()
-            db.commit()
-            st.warning(f"Deleted {count} devices!")
-            st.rerun()
+    st.markdown("**Data Management:**")
+    # Use session state to track which delete operation to show
+    delete_action = st.radio(
+        "Select action:",
+        ["None", "Delete All Devices", "Delete All Readings"],
+        key="delete_action_radio",
+        horizontal=False
+    )
+    
+    if delete_action == "Delete All Devices":
+        if st.button("🗑️ Confirm Delete All Devices", type="secondary", use_container_width=True):
+            try:
+                count = db.query(Device).count()
+                if count > 0:
+                    db.query(Device).delete()
+                    db.commit()
+                    st.warning(f"🗑️ Deleted {count} devices!")
+                    st.session_state.delete_action_radio = "None"  # Reset selection
+                    st.rerun()
+                else:
+                    st.info("No devices to delete.")
+            except Exception as e:
+                st.error(f"❌ Error deleting devices: {e}")
+                import traceback
+                with st.expander("Error Details"):
+                    st.code(traceback.format_exc())
+    
+    elif delete_action == "Delete All Readings":
+        if st.button("🗑️ Confirm Delete All Readings", type="secondary", use_container_width=True):
+            try:
+                from models.reading import Reading
+                count = db.query(Reading).count()
+                if count > 0:
+                    db.query(Reading).delete()
+                    db.commit()
+                    st.warning(f"🗑️ Deleted {count} readings!")
+                    st.session_state.delete_action_radio = "None"  # Reset selection
+                    st.rerun()
+                else:
+                    st.info("No readings to delete.")
+            except Exception as e:
+                st.error(f"❌ Error deleting readings: {e}")
+                import traceback
+                with st.expander("Error Details"):
+                    st.code(traceback.format_exc())
 
 st.markdown("---")
 
@@ -244,4 +330,44 @@ with st.expander("ℹ️ Simulation Information"):
     - Duty cycle: 10 messages/hour per device (EU868 regulation)
     - PER: Based on SNR thresholds per SF
     """)
+
+# Auto-advance simulation if running (at the END, after all UI is rendered)
+# Only auto-advance if simulation is running AND we're not in the middle of a button click
+if simulator.is_running and "simulation_just_started" not in st.session_state:
+    # Update database session (sessions can expire)
+    simulator.db = db
+    
+    # Show running indicator
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Automatically step the simulation forward
+    try:
+        status_text.info("🔄 Simulation is running... Generating readings for all devices...")
+        progress_bar.progress(50)
+        
+        # Step the simulation (this already commits to DB internally)
+        simulator.step()
+        
+        progress_bar.progress(100)
+        status_text.success("✅ Simulation step completed! Readings generated and saved to database.")
+        
+        # Rerun after a delay to continue the simulation
+        import time
+        time.sleep(3.0)  # 3 second delay between steps for better visibility
+        progress_bar.empty()
+        status_text.empty()
+        st.rerun()
+    except Exception as e:
+        progress_bar.empty()
+        status_text.empty()
+        st.error(f"❌ Error during simulation step: {e}")
+        import traceback
+        with st.expander("🔍 Error Details (Click to expand)"):
+            st.code(traceback.format_exc())
+        simulator.stop()
+        st.warning("Simulation stopped due to error. Click 'Start Simulation' to resume.")
+elif "simulation_just_started" in st.session_state:
+    # Clear the flag so next render can auto-advance
+    del st.session_state.simulation_just_started
 

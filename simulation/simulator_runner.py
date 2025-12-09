@@ -52,15 +52,18 @@ class SimulatorRunner:
         self.current_time = datetime.now()
         logger.info("Simulation reset")
     
-    def step(self, time_delta_seconds: int = None):
+    def step(self, time_delta_seconds: int = None, force: bool = False):
         """
         Advance simulation by one step.
         Generates readings for all devices and processes them through the wireless stack.
         
         Args:
             time_delta_seconds: How many seconds to advance (defaults to transmission interval)
+            force: If True, step even when not running (for manual stepping)
         """
-        if not self.is_running:
+        # Allow manual stepping even when not running (for demonstration purposes)
+        # Only auto-advance requires is_running to be True
+        if not self.is_running and not force:
             return
         
         if time_delta_seconds is None:

@@ -263,14 +263,23 @@ def main():
             ui.pages_main.render()
         elif page_module == "ui.pages_devices":
             import ui.pages_devices
+            ui.pages_devices.render()
         elif page_module == "ui.pages_map":
             import ui.pages_map
+            ui.pages_map.render()
         elif page_module == "ui.pages_alerts":
             import ui.pages_alerts
+            ui.pages_alerts.render()
         elif page_module == "ui.pages_wireless":
             import ui.pages_wireless
+            try:
+                ui.pages_wireless.render()
+            except Exception as e:
+                logger.error(f"Error in wireless page render: {e}", exc_info=True)
+                raise  # Re-raise to be caught by outer exception handler
         elif page_module == "ui.pages_simulation":
             import ui.pages_simulation
+            ui.pages_simulation.render()
         else:
             # Unknown page, redirect to dashboard
             logger.warning(f"Unknown page: {page}")
@@ -281,13 +290,14 @@ def main():
     except Exception as e:
         logger.error(f"Error loading page {page}: {e}", exc_info=True)
         st.error(f"⚠️ Error loading page '{page}': {str(e)}")
-        st.info("Redirecting to dashboard...")
-        # Only show full traceback in development
-        if logger.level <= logging.DEBUG:
-            import traceback
+        # Always show traceback to help debug
+        import traceback
+        with st.expander("🔍 Error Details (Click to expand)", expanded=True):
             st.code(traceback.format_exc())
-        st.query_params["page"] = "dashboard"
-        st.rerun()
+        st.info("You can try refreshing or go back to dashboard.")
+        # Don't auto-redirect - let user see the error
+        # st.query_params["page"] = "dashboard"
+        # st.rerun()
 
 
 if __name__ == "__main__":

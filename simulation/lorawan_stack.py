@@ -21,7 +21,7 @@ class LoRaWANStack:
     
     def __init__(self):
         self.transmission_history: List[Dict] = []  # Track recent transmissions
-        self.device_message_counts: Dict[int, List[datetime]] = []  # Track duty cycle per device
+        self.device_message_counts: Dict[int, List[datetime]] = {}  # Track duty cycle per device
         
     def check_duty_cycle(self, device_id: int, current_time: datetime) -> bool:
         """

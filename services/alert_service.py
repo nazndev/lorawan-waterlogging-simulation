@@ -6,7 +6,7 @@ from sqlalchemy import desc, and_
 from typing import List, Optional
 from datetime import datetime, timedelta
 from models.alert import Alert, AlertType, AlertStatus
-from models.device import Device
+from models.device import Device, DeviceStatus
 from models.reading import Reading
 from core.config import APP_CONFIG
 import logging
@@ -159,12 +159,19 @@ def check_device_offline(db: Session, device: Device) -> Optional[Alert]:
     if existing:
         return existing
     
+    # Create message with more context
+    if device.last_seen:
+        last_seen_str = device.last_seen.strftime("%Y-%m-%d %H:%M:%S")
+        message = f"Device {device.name} is offline (last seen: {last_seen_str})"
+    else:
+        message = f"Device {device.name} is offline (never seen)"
+    
     # Create new alert
     alert = Alert(
         device_id=device.id,
         alert_type=AlertType.DEVICE_OFFLINE,
         status=AlertStatus.ACTIVE,
-        message=f"Device {device.name} is offline",
+        message=message,
         severity="medium",
     )
     
@@ -197,25 +204,97 @@ def get_alerts_for_device(db: Session, device_id: int,
 
 
 def acknowledge_alert(db: Session, alert_id: int) -> Optional[Alert]:
-    """Acknowledge an alert."""
+    """
+    Acknowledge an alert.
+    If it's a device offline alert, also check and update device status to ONLINE
+    if the device has recent activity.
+    """
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         return None
     
     alert.status = AlertStatus.ACKNOWLEDGED
+    
+    # If acknowledging a device offline alert, check if device should be marked online
+    if alert.alert_type == AlertType.DEVICE_OFFLINE:
+        device = db.query(Device).filter(Device.id == alert.device_id).first()
+        if device:
+            # Check if device has recent activity (within offline threshold)
+            offline_threshold = timedelta(
+                minutes=APP_CONFIG["device_offline_threshold_minutes"]
+            )
+            
+            if device.last_seen:
+                # Handle timezone-aware datetime
+                last_seen = device.last_seen
+                if last_seen.tzinfo is not None:
+                    last_seen = last_seen.replace(tzinfo=None)
+                
+                time_since_last_seen = datetime.now() - last_seen
+                if time_since_last_seen <= offline_threshold:
+                    # Device has recent activity, mark as online
+                    device.status = DeviceStatus.ONLINE
+                    logger.info(f"Device {device.device_id} marked as ONLINE after acknowledging offline alert")
+                else:
+                    # Device hasn't sent data recently, but user acknowledged the alert
+                    # Mark device as online anyway (user has handled the issue)
+                    device.status = DeviceStatus.ONLINE
+                    logger.info(f"Device {device.device_id} marked as ONLINE after acknowledging alert (manual override)")
+            else:
+                # Device has never been seen, but user acknowledged the alert
+                # Mark as online (user has handled the issue)
+                device.status = DeviceStatus.ONLINE
+                logger.info(f"Device {device.device_id} marked as ONLINE after acknowledging alert (manual override)")
+    
     db.commit()
     db.refresh(alert)
     return alert
 
 
 def resolve_alert(db: Session, alert_id: int) -> Optional[Alert]:
-    """Resolve an alert."""
+    """
+    Resolve an alert.
+    If it's a device offline alert, also check and update device status to ONLINE
+    if the device has recent activity.
+    """
     alert = db.query(Alert).filter(Alert.id == alert_id).first()
     if not alert:
         return None
     
     alert.status = AlertStatus.RESOLVED
     alert.resolved_at = datetime.now()
+    
+    # If resolving a device offline alert, check if device should be marked online
+    if alert.alert_type == AlertType.DEVICE_OFFLINE:
+        device = db.query(Device).filter(Device.id == alert.device_id).first()
+        if device:
+            # Check if device has recent activity (within offline threshold)
+            offline_threshold = timedelta(
+                minutes=APP_CONFIG["device_offline_threshold_minutes"]
+            )
+            
+            if device.last_seen:
+                # Handle timezone-aware datetime
+                last_seen = device.last_seen
+                if last_seen.tzinfo is not None:
+                    last_seen = last_seen.replace(tzinfo=None)
+                
+                time_since_last_seen = datetime.now() - last_seen
+                if time_since_last_seen <= offline_threshold:
+                    # Device has recent activity, mark as online
+                    device.status = DeviceStatus.ONLINE
+                    logger.info(f"Device {device.device_id} marked as ONLINE after resolving offline alert")
+                else:
+                    # Device hasn't sent data recently, but user resolved the alert
+                    # Mark device as online anyway (user has handled the issue)
+                    device.status = DeviceStatus.ONLINE
+                    logger.info(f"Device {device.device_id} marked as ONLINE after resolving alert (manual override)")
+            else:
+                # Device has never been seen, but user resolved the alert
+                # Mark as online (user has handled the issue)
+                device.status = DeviceStatus.ONLINE
+                logger.info(f"Device {device.device_id} marked as ONLINE after resolving alert (manual override)")
+    
     db.commit()
     db.refresh(alert)
     return alert
