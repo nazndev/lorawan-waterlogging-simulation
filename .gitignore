@@ -49,9 +49,18 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Project-specific: Ignore YML files (internal docs)
+# Project-specific: Ignore YML and internal MD files
 *.yml
 *.yaml
 
-# Note: .md files are tracked (README.md, CONTRIBUTOR.md, DEMONSTRATION_GUIDE.md, etc.)
+# Ignore internal documentation files (keep only README.md and CONTRIBUTOR.md)
+DEMONSTRATION_GUIDE.md
+PROPOSAL_VALIDATION.md
+DEMONSTRATION_CHECKLIST.md
+UI_REVIEW_SUMMARY.md
+*.md
+
+# But keep README.md and CONTRIBUTOR.md in the repo
+!README.md
+!CONTRIBUTOR.md
 
