@@ -4,11 +4,12 @@ Alert service for managing alerts and notifications.
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from models.alert import Alert, AlertType, AlertStatus
 from models.device import Device, DeviceStatus
 from models.reading import Reading
 from core.config import APP_CONFIG
+import core.config as config_module  # Import module to access runtime updates
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ def check_water_level_alerts(db: Session, device_id: int,
     Returns:
         Created Alert if threshold exceeded, None otherwise
     """
-    threshold = APP_CONFIG["water_level_threshold_cm"]
+    # Use runtime config (may have been updated via UI)
+    threshold = config_module.APP_CONFIG["water_level_threshold_cm"]
     
     if water_level_cm <= threshold:
         return None
@@ -74,15 +76,17 @@ def check_rate_of_rise(db: Session, device_id: int) -> Optional[Alert]:
     Returns:
         Created Alert if rate of rise exceeds threshold, None otherwise
     """
-    threshold = APP_CONFIG["rate_of_rise_threshold_cm_per_hour"]
+    # Use runtime config (may have been updated via UI)
+    threshold = config_module.APP_CONFIG["rate_of_rise_threshold_cm_per_hour"]
     
-    # Get readings from last hour
-    since = datetime.now() - timedelta(hours=1)
+    # Get readings from last hour (use timezone-aware datetime)
+    # Note: We include ALL readings (not just successful ones) to get accurate rate calculation
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
     readings = db.query(Reading).filter(
         and_(
             Reading.device_id == device_id,
-            Reading.timestamp >= since,
-            Reading.packet_delivered == True
+            Reading.timestamp >= since
+            # Include all readings for rate calculation, not just successful ones
         )
     ).order_by(Reading.timestamp).all()
     
@@ -135,16 +139,18 @@ def check_rate_of_rise(db: Session, device_id: int) -> Optional[Alert]:
 
 def check_device_offline(db: Session, device: Device) -> Optional[Alert]:
     """
-    Check if device is offline and create alert if needed.
+    Check if device is offline or maintenance and create alert if needed.
+    Devices in OFFLINE or MAINTENANCE status aren't sending data, so alerts should be generated.
     
     Args:
         db: Database session
         device: Device object
         
     Returns:
-        Created Alert if device offline, None otherwise
+        Created Alert if device offline/maintenance, None otherwise
     """
-    if device.status.value != "offline":
+    # Check both offline and maintenance devices (both aren't sending data)
+    if device.status.value not in ["offline", "maintenance"]:
         return None
     
     # Check if active alert already exists
@@ -159,12 +165,21 @@ def check_device_offline(db: Session, device: Device) -> Optional[Alert]:
     if existing:
         return existing
     
-    # Create message with more context
-    if device.last_seen:
-        last_seen_str = device.last_seen.strftime("%Y-%m-%d %H:%M:%S")
-        message = f"Device {device.name} is offline (last seen: {last_seen_str})"
-    else:
-        message = f"Device {device.name} is offline (never seen)"
+    # Create message with more context based on status
+    if device.status.value == "maintenance":
+        if device.last_seen:
+            last_seen_str = device.last_seen.strftime("%Y-%m-%d %H:%M:%S")
+            message = f"Device {device.name} is in maintenance mode (last seen: {last_seen_str})"
+        else:
+            message = f"Device {device.name} is in maintenance mode (never seen)"
+        severity = "low"  # Maintenance is less urgent than offline
+    else:  # offline
+        if device.last_seen:
+            last_seen_str = device.last_seen.strftime("%Y-%m-%d %H:%M:%S")
+            message = f"Device {device.name} is offline (last seen: {last_seen_str})"
+        else:
+            message = f"Device {device.name} is offline (never seen)"
+        severity = "medium"
     
     # Create new alert
     alert = Alert(
@@ -172,7 +187,7 @@ def check_device_offline(db: Session, device: Device) -> Optional[Alert]:
         alert_type=AlertType.DEVICE_OFFLINE,
         status=AlertStatus.ACTIVE,
         message=message,
-        severity="medium",
+        severity=severity,
     )
     
     db.add(alert)
@@ -221,7 +236,7 @@ def acknowledge_alert(db: Session, alert_id: int) -> Optional[Alert]:
         if device:
             # Check if device has recent activity (within offline threshold)
             offline_threshold = timedelta(
-                minutes=APP_CONFIG["device_offline_threshold_minutes"]
+                minutes=config_module.APP_CONFIG["device_offline_threshold_minutes"]
             )
             
             if device.last_seen:
@@ -270,7 +285,7 @@ def resolve_alert(db: Session, alert_id: int) -> Optional[Alert]:
         if device:
             # Check if device has recent activity (within offline threshold)
             offline_threshold = timedelta(
-                minutes=APP_CONFIG["device_offline_threshold_minutes"]
+                minutes=config_module.APP_CONFIG["device_offline_threshold_minutes"]
             )
             
             if device.last_seen:

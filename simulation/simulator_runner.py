@@ -33,6 +33,7 @@ class SimulatorRunner:
         self.is_running = False
         self.device_last_levels = {}  # Track last water level per device
         self.device_last_seen = {}  # Track last successful transmission per device
+        self.water_level_overrides = {}  # Manual water level overrides (device_id -> level)
     
     def start(self):
         """Start the simulation."""
@@ -50,6 +51,7 @@ class SimulatorRunner:
         self.device_last_levels = {}
         self.device_last_seen = {}
         self.current_time = datetime.now()
+        # Note: water_level_overrides are NOT reset here - they persist until manually cleared
         logger.info("Simulation reset")
     
     def step(self, time_delta_seconds: int = None, force: bool = False):
@@ -82,9 +84,18 @@ class SimulatorRunner:
         
         for device in devices:
             try:
-                # Generate water level reading
-                previous_level = self.device_last_levels.get(device.id, None)
-                water_level = generate_water_level(previous_level)
+                # Check for manual water level override (from UI)
+                # This allows users to set specific water levels for demonstration
+                water_level_override = getattr(self, 'water_level_overrides', {}).get(device.id, None)
+                
+                if water_level_override is not None:
+                    # Use manual override
+                    water_level = water_level_override
+                else:
+                    # Generate water level reading normally
+                    previous_level = self.device_last_levels.get(device.id, None)
+                    water_level = generate_water_level(previous_level)
+                
                 self.device_last_levels[device.id] = water_level
                 
                 # Calculate distance to gateway
@@ -135,8 +146,9 @@ class SimulatorRunner:
                 self._update_device_status(device)
                 
                 # Process alerts for this device
-                if packet_delivered:
-                    process_alerts_for_device(self.db, device.id, water_level)
+                # Check alerts even if packet failed (we still have the reading data)
+                # This ensures alerts are generated based on actual water levels, not just successful transmissions
+                process_alerts_for_device(self.db, device.id, water_level)
                 
                 # Check for device offline alert
                 if device.status == DeviceStatus.OFFLINE:
@@ -146,7 +158,20 @@ class SimulatorRunner:
                 logger.error(f"Error processing device {device.device_id}: {e}")
                 continue
         
-        # Commit all readings
+        # Check for offline and maintenance devices that didn't participate in this step
+        # These devices aren't sending data, so alerts should be generated
+        all_devices = self.db.query(Device).all()
+        for device in all_devices:
+            # Check offline devices
+            if device.status == DeviceStatus.OFFLINE:
+                check_device_offline(self.db, device)
+            # Check maintenance devices (they also aren't sending data)
+            elif device.status == DeviceStatus.MAINTENANCE:
+                # Maintenance devices should also generate alerts if they haven't been seen recently
+                # Use same logic as offline check
+                check_device_offline(self.db, device)
+        
+        # Commit all readings and alerts
         try:
             self.db.commit()
         except Exception as e:
@@ -157,15 +182,23 @@ class SimulatorRunner:
         """
         Update device status based on last seen time.
         Marks device as offline if no successful transmission for threshold period.
+        
+        Note: Devices with last_seen=None are NOT immediately marked offline.
+        They get a chance to transmit first. Only mark offline if they've been
+        seen before but haven't transmitted recently.
         """
         offline_threshold = timedelta(
             minutes=APP_CONFIG["device_offline_threshold_minutes"]
         )
         
+        # If device has never been seen, keep it ONLINE (give it a chance to transmit)
         if device.last_seen is None:
-            device.status = DeviceStatus.OFFLINE
+            # Only mark offline if simulation has been running for a while
+            # and device still hasn't transmitted (handled by check_device_offline)
+            device.status = DeviceStatus.ONLINE
             return
         
+        # Device has been seen before - check if it's been too long
         time_since_last_seen = self.current_time - device.last_seen
         if time_since_last_seen > offline_threshold:
             device.status = DeviceStatus.OFFLINE

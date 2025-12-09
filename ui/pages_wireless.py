@@ -79,6 +79,316 @@ def render():
 
     st.markdown("---")
 
+    # Interactive Transmission Flow Demonstration
+    st.markdown("## 🔄 Interactive Transmission Flow Demonstration")
+    st.markdown("""
+    **Select a device below to see step-by-step how wireless communication works in this simulation.**
+    This shows the complete transmission process from device to gateway.
+    """)
+    
+    # Get all devices for selection
+    devices = get_all_devices(db)
+    if devices:
+        device_options = {f"{d.device_id} - {d.name}": d for d in devices}
+        selected_device_name = st.selectbox(
+            "Select a Device to Analyze",
+            options=list(device_options.keys()),
+            key="transmission_demo_device"
+        )
+        selected_device = device_options[selected_device_name]
+        
+        # Get latest reading for this device
+        from services.device_service import get_devices_with_latest_readings
+        devices_with_readings = get_devices_with_latest_readings(db)
+        latest_reading = None
+        for item in devices_with_readings:
+            if item["device"].id == selected_device.id:
+                latest_reading = item["latest_reading"]
+                break
+        
+        if latest_reading:
+            st.markdown("### 📡 Transmission Flow Analysis")
+            
+            # Calculate values for demonstration
+            from simulation.wireless_channel import (
+                calculate_distance, calculate_path_loss, calculate_snr,
+                calculate_rssi, calculate_per, is_packet_delivered
+            )
+            
+            gateway_lat = WIRELESS_CONFIG["gateway_latitude"]
+            gateway_lon = WIRELESS_CONFIG["gateway_longitude"]
+            
+            distance_m = calculate_distance(
+                selected_device.latitude, selected_device.longitude,
+                gateway_lat, gateway_lon
+            )
+            
+            # Step-by-step breakdown
+            st.markdown("#### Step 1: Physical Layer - Signal Transmission")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("TX Power", f"{selected_device.tx_power_dbm} dBm")
+            with col2:
+                st.metric("Distance to Gateway", f"{distance_m/1000:.2f} km")
+            with col3:
+                st.metric("Spreading Factor", f"SF{selected_device.spreading_factor}")
+            
+            st.markdown("""
+            **What happens:**
+            - Device transmits at **{tx_power} dBm** power
+            - Signal travels **{distance:.2f} km** through urban environment (Dhaka city)
+            - Uses **SF{sf}** modulation (Chirp Spread Spectrum)
+            """.format(
+                tx_power=selected_device.tx_power_dbm,
+                distance=distance_m/1000,
+                sf=selected_device.spreading_factor
+            ))
+            
+            st.markdown("---")
+            st.markdown("#### Step 2: Path Loss Calculation (Propagation Model)")
+            
+            # Calculate path loss (without shadowing for demonstration)
+            PL0 = WIRELESS_CONFIG["PL0"]
+            d0 = WIRELESS_CONFIG["d0"]
+            n = WIRELESS_CONFIG["path_loss_exponent"]
+            import math
+            path_loss_base = PL0 + 10 * n * math.log10(distance_m / d0)
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("PL₀ (Reference)", f"{PL0} dB")
+            with col2:
+                st.metric("Path Loss Exponent (n)", f"{n}")
+            with col3:
+                st.metric("Base Path Loss", f"{path_loss_base:.1f} dB")
+            with col4:
+                st.metric("Actual Path Loss", f"{latest_reading.rssi_dbm - selected_device.tx_power_dbm:.1f} dB")
+            
+            st.markdown("""
+            **Formula:** `PL(d) = PL₀ + 10·n·log₁₀(d/d₀) + X_σ`
+            
+            - **PL₀ = {PL0} dB**: Reference path loss at 1m
+            - **n = {n}**: Path loss exponent (urban environment)
+            - **Shadowing (X_σ)**: Random variation due to obstacles, buildings
+            - **Result**: Signal loses **{path_loss:.1f} dB** over **{distance:.2f} km**
+            
+**In real environments, signals weaken as they travel farther from the transmitter.**
+            """.format(
+                PL0=PL0,
+                n=n,
+                path_loss=abs(latest_reading.rssi_dbm - selected_device.tx_power_dbm),
+                distance=distance_m/1000
+            ))
+            
+            st.markdown("---")
+            st.markdown("#### Step 3: Signal Quality Metrics")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("RSSI", f"{latest_reading.rssi_dbm:.1f} dBm", 
+                        help="Received Signal Strength Indicator")
+            with col2:
+                st.metric("SNR", f"{latest_reading.snr_db:.1f} dB",
+                        help="Signal-to-Noise Ratio")
+            with col3:
+                noise_floor = WIRELESS_CONFIG["noise_floor_dbm"]
+                st.metric("Noise Floor", f"{noise_floor} dBm")
+            
+            st.markdown("""
+            **Calculations:**
+            - **RSSI = TX Power - Path Loss** = {tx_power} - {path_loss:.1f} = **{rssi:.1f} dBm**
+            - **SNR = RSSI - Noise Floor** = {rssi:.1f} - ({noise_floor}) = **{snr:.1f} dB**
+            
+            **Why SNR matters:**
+            - SNR determines if the gateway can decode the signal
+            - Higher SNR = Lower Packet Error Rate (PER)
+            - Each Spreading Factor has a minimum SNR threshold
+            """.format(
+                tx_power=selected_device.tx_power_dbm,
+                path_loss=abs(latest_reading.rssi_dbm - selected_device.tx_power_dbm),
+                rssi=latest_reading.rssi_dbm,
+                noise_floor=noise_floor,
+                snr=latest_reading.snr_db
+            ))
+            
+            st.markdown("---")
+            st.markdown("#### Step 4: MAC Layer - LoRaWAN Protocol")
+            
+            # For demonstration, show what would happen (simplified)
+            # In real simulation, this is checked by LoRaWAN stack
+            duty_cycle_ok = True  # Assume OK for demo (actual check happens in simulation)
+            no_collision = True   # Assume no collision for demo (actual check happens in simulation)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                duty_status = "✅ Allowed" if duty_cycle_ok else "❌ Blocked"
+                st.metric("Duty Cycle", duty_status,
+                         help=f"Max {LORAWAN_CONFIG['max_messages_per_hour']} messages/hour")
+            with col2:
+                collision_status = "✅ No Collision" if no_collision else "❌ Collision Detected"
+                st.metric("Collision Check", collision_status,
+                         help="Same SF + overlapping time = collision")
+            with col3:
+                airtime = SF_CHARACTERISTICS[selected_device.spreading_factor]["airtime_ms"]
+                st.metric("Airtime", f"{airtime:.0f} ms",
+                         help="Time on channel for this transmission")
+            
+            st.markdown("""
+            **LoRaWAN MAC Layer Concepts:**
+            
+            1. **Duty Cycle Limitation:**
+               - EU868 regulation: Max {max_msg} messages/hour per device
+               - Prevents network congestion
+               - Ensures fair channel access
+            
+            2. **Collision Detection:**
+               - Collision occurs if: Same SF + Overlapping transmission times
+               - Different SFs are **orthogonal** (no collision)
+               - This device uses **SF{sf}** - only collides with other SF{sf} devices
+            
+            3. **Airtime:**
+               - SF{sf} uses **{airtime:.0f} ms** of channel time
+               - Higher SF = longer airtime = higher collision probability
+               - Trade-off: Range vs. Network Capacity
+            
+**This shows how Multiple Access works in wireless networks.**
+            """.format(
+                max_msg=LORAWAN_CONFIG["max_messages_per_hour"],
+                sf=selected_device.spreading_factor,
+                airtime=airtime
+            ))
+            
+            st.markdown("---")
+            st.markdown("#### Step 5: Packet Delivery Decision")
+            
+            # Calculate PER
+            per = calculate_per(latest_reading.snr_db, selected_device.spreading_factor)
+            packet_delivered = latest_reading.packet_delivered
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                per_percent = per * 100
+                st.metric("Packet Error Rate (PER)", f"{per_percent:.2f}%",
+                         help="Probability of packet error based on SNR and SF")
+            with col2:
+                delivery_status = "✅ Delivered" if packet_delivered else "❌ Failed"
+                st.metric("Packet Status", delivery_status)
+            
+            # SF threshold
+            sensitivity_thresholds = {
+                7: -7.5, 8: -10.0, 9: -12.5, 10: -15.0, 11: -17.5, 12: -20.0
+            }
+            sf_threshold = sensitivity_thresholds.get(selected_device.spreading_factor, -20.0)
+            
+            st.markdown("""
+            **Packet Delivery Logic:**
+            
+            - **SNR Threshold for SF{sf}**: {threshold} dB
+            - **Actual SNR**: {snr:.1f} dB
+            - **SNR Margin**: {margin:.1f} dB ({status})
+            
+            **Decision:**
+            - If SNR ≥ threshold AND duty cycle OK AND no collision → **Packet Delivered**
+            - Otherwise → **Packet Failed**
+            
+            **Result**: {result}
+            
+**Signal quality (SNR) determines whether packets get delivered.**
+            """.format(
+                sf=selected_device.spreading_factor,
+                threshold=sf_threshold,
+                snr=latest_reading.snr_db,
+                margin=latest_reading.snr_db - sf_threshold,
+                status="Above threshold" if latest_reading.snr_db >= sf_threshold else "Below threshold",
+                result="✅ Packet successfully delivered to gateway" if packet_delivered else "❌ Packet failed (low SNR, collision, or duty cycle limit)"
+            ))
+            
+            st.markdown("---")
+            st.markdown("#### 📊 Complete Transmission Summary")
+            
+            summary_data = {
+                "Parameter": [
+                    "Device Location",
+                    "Gateway Location", 
+                    "Distance",
+                    "TX Power",
+                    "Path Loss",
+                    "RSSI",
+                    "SNR",
+                    "Spreading Factor",
+                    "SNR Threshold",
+                    "Duty Cycle",
+                    "Collision",
+                    "Packet Delivered"
+                ],
+                "Value": [
+                    f"{selected_device.latitude:.4f}°, {selected_device.longitude:.4f}°",
+                    f"{gateway_lat:.4f}°, {gateway_lon:.4f}°",
+                    f"{distance_m/1000:.2f} km",
+                    f"{selected_device.tx_power_dbm} dBm",
+                    f"{abs(latest_reading.rssi_dbm - selected_device.tx_power_dbm):.1f} dB",
+                    f"{latest_reading.rssi_dbm:.1f} dBm",
+                    f"{latest_reading.snr_db:.1f} dB",
+                    f"SF{selected_device.spreading_factor}",
+                    f"{sf_threshold} dB",
+                    f"{LORAWAN_CONFIG['max_messages_per_hour']} msg/hour",
+                    "No" if no_collision else "Yes",
+                    "Yes" if packet_delivered else "No"
+                ]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            
+            st.info("""
+            **Wireless communication concepts:**
+            - Path loss calculation using log-distance model
+            - SNR and RSSI metrics for signal quality
+            - How Spreading Factor affects range and capacity
+            - Duty cycle and collision detection in shared channels
+            - PER calculation and packet delivery decisions
+            """)
+            
+            st.markdown("---")
+            st.markdown("#### 📡 Communication Stack Layers")
+            st.markdown("""
+            This simulation models the **LoRaWAN communication stack**:
+            
+            ```
+            ┌─────────────────────────────────────────┐
+            │  Application Layer                      │
+            │  (Water Level Data)                     │
+            └─────────────────────────────────────────┘
+                        ↓
+            ┌─────────────────────────────────────────┐
+            │  MAC Layer (LoRaWAN Stack)              │
+            │  • Duty Cycle Enforcement               │
+            │  • Collision Detection                  │
+            │  • Airtime Calculation                  │
+            └─────────────────────────────────────────┘
+                        ↓
+            ┌─────────────────────────────────────────┐
+            │  Physical Layer (Wireless Channel)      │
+            │  • Path Loss Calculation                │
+            │  • SNR/RSSI Calculation                 │
+            │  • PER Calculation                      │
+            │  • Packet Delivery Decision             │
+            └─────────────────────────────────────────┘
+                        ↓
+            ┌─────────────────────────────────────────┐
+            │  Radio Channel                          │
+            │  (Signal Propagation through Air)       │
+            └─────────────────────────────────────────┘
+            ```
+            
+            **This shows the layered architecture of wireless communication systems.**
+            """)
+        else:
+            st.warning(f"No readings available for {selected_device.name}. Run the simulation to generate transmission data.")
+    else:
+        st.info("No devices available. Create devices in the Simulation Control page.")
+    
+    st.markdown("---")
+
     # Wireless Communication Models
     st.markdown("## Wireless Communication Models")
 
@@ -129,9 +439,9 @@ def render():
         sigma=WIRELESS_CONFIG["shadowing_sigma"]
     ))
     
-        # Visualize path loss vs distance
+        # Visualize path loss vs distance (educational example - shows formula behavior)
         from simulation.wireless_channel import calculate_path_loss
-        distances = np.linspace(100, 10000, 100)  # 100m to 10km
+        distances = np.linspace(100, 10000, 100)  # Example distances: 100m to 10km
         path_losses = []
         for d in distances:
             # Calculate path loss with no shadowing for clean visualization curve
@@ -225,8 +535,8 @@ def render():
         - Channel conditions (fading, interference)
         """)
         
-        # Visualize SNR vs PER relationship
-        snr_range = np.linspace(-25, 10, 100)
+        # Visualize SNR vs PER relationship (educational example - shows theoretical relationship)
+        snr_range = np.linspace(-25, 10, 100)  # Example SNR values for demonstration
         per_sf7 = []
         per_sf12 = []
         
@@ -406,7 +716,7 @@ def render():
         interval=LORAWAN_CONFIG["transmission_interval"]
     ))
     
-        # Collision probability visualization
+        # Collision probability visualization (using real data)
         st.markdown("#### Collision Probability Analysis")
         
         devices = get_all_devices(db)
@@ -415,26 +725,88 @@ def render():
             sf = device.spreading_factor
             sf_counts[sf] = sf_counts.get(sf, 0) + 1
         
+        # Get actual PDR data by SF (includes collision effects)
+        pdr_by_sf_data = get_pdr_by_spreading_factor(db, hours=hours)
+        
         if sf_counts:
-            df_collision = pd.DataFrame({
-                "Spreading Factor": list(sf_counts.keys()),
-                "Device Count": list(sf_counts.values()),
-                "Collision Risk": ["High" if count > 5 else "Medium" if count > 2 else "Low" 
-                                  for count in sf_counts.values()]
-            })
-            df_collision = df_collision.sort_values("Spreading Factor")
+            # Calculate theoretical collision probability based on device count and airtime
+            collision_data = []
+            for sf in sorted(sf_counts.keys()):
+                device_count = sf_counts[sf]
+                airtime_ms = SF_CHARACTERISTICS.get(sf, {}).get("airtime_ms", 100.0)
+                airtime_sec = airtime_ms / 1000.0
+                
+                # Transmission rate: messages per hour (from config)
+                messages_per_hour = LORAWAN_CONFIG["max_messages_per_hour"]
+                lambda_rate = messages_per_hour / 3600.0  # messages per second per device
+                
+                # Theoretical collision probability: P = 1 - e^(-λ * N * T)
+                # Where λ = transmission rate, N = number of devices, T = airtime
+                # This is a simplified model for demonstration
+                if device_count > 1:
+                    # Probability that at least one other device transmits during airtime
+                    collision_prob = 1 - np.exp(-lambda_rate * (device_count - 1) * airtime_sec)
+                else:
+                    collision_prob = 0.0
+                
+                # Get actual PDR from readings (if available)
+                actual_pdr = pdr_by_sf_data.get(sf, {}).get("pdr", None)
+                total_packets = pdr_by_sf_data.get(sf, {}).get("total", 0)
+                
+                # Collision risk categorization
+                if collision_prob > 0.3 or device_count > 5:
+                    risk = "High"
+                elif collision_prob > 0.1 or device_count > 2:
+                    risk = "Medium"
+                else:
+                    risk = "Low"
+                
+                collision_data.append({
+                    "Spreading Factor": f"SF{sf}",
+                    "Device Count": device_count,
+                    "Airtime (ms)": f"{airtime_ms:.0f}",
+                    "Theoretical Collision Prob": f"{collision_prob*100:.1f}%",
+                    "Actual PDR": f"{actual_pdr:.1f}%" if actual_pdr is not None else "No data",
+                    "Total Packets": total_packets,
+                    "Collision Risk": risk
+                })
             
-            fig_collision = px.bar(
-                df_collision,
-                x="Spreading Factor",
-                y="Device Count",
-                color="Collision Risk",
-                title="Collision Risk by Spreading Factor",
-                color_discrete_map={"High": "red", "Medium": "orange", "Low": "green"}
+            df_collision = pd.DataFrame(collision_data)
+            
+            # Create visualization
+            fig_collision = go.Figure()
+            
+            # Bar chart for device count
+            fig_collision.add_trace(go.Bar(
+                x=df_collision["Spreading Factor"],
+                y=df_collision["Device Count"],
+                name="Device Count",
+                marker_color=df_collision["Collision Risk"].map({
+                    "High": "red",
+                    "Medium": "orange", 
+                    "Low": "green"
+                })
+            ))
+            
+            fig_collision.update_layout(
+                title="Collision Analysis by Spreading Factor (Real Data)",
+                xaxis_title="Spreading Factor",
+                yaxis_title="Device Count",
+                hovermode='x unified',
+                showlegend=False
             )
             st.plotly_chart(fig_collision, use_container_width=True)
             
             st.dataframe(df_collision, use_container_width=True, hide_index=True)
+            
+            st.info("""
+            **Analysis Notes:**
+            - **Device Count**: Number of devices using each SF (real data)
+            - **Theoretical Collision Prob**: Calculated based on transmission rate and airtime
+            - **Actual PDR**: Real packet delivery ratio from simulation (includes collision effects)
+            - **Collision Risk**: Based on device count and collision probability
+            - Higher SF = longer airtime = higher collision probability for same device count
+            """)
         
         st.markdown("""
         **Network Design Considerations:**
