@@ -51,7 +51,7 @@ def create_default_admin(db: Session) -> User:
         # If it's the 72-byte error, try one more time with truncation
         password_bytes = password.encode('utf-8')[:72]
         password = password_bytes.decode('utf-8', errors='ignore')
-        hashed_password = hash_password(password)
+    hashed_password = hash_password(password)
     
     admin_user = User(
         username=username,
