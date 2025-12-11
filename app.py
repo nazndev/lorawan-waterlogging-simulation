@@ -47,19 +47,10 @@ def initialize_database():
     try:
         # Check database connection
         if not check_db_connection():
-            st.error("""
-            ⚠️ **Database Connection Failed**
-            
-            Please ensure PostgreSQL is running and the database exists.
-            
-            To create the database, run:
-            ```bash
-            createdb waterlogging_sim
-            ```
-            
-            Or set the DATABASE_URL environment variable if using a different database.
-            """)
-            st.stop()
+            logger.warning("Database connection check failed - will retry on next access")
+            # Don't stop the app - allow it to start and show error on pages that need DB
+            st.session_state.db_connection_error = True
+            return False
         
         # Initialize database tables
         init_db()
@@ -80,12 +71,14 @@ def initialize_database():
             logger.info(f"Created {len(demo_devices)} demo devices")
         
         st.session_state.db_initialized = True
+        st.session_state.db_connection_error = False
         return True
         
     except Exception as e:
-        logger.error(f"Database initialization error: {e}")
-        st.error(f"Database initialization failed: {e}")
-        st.stop()
+        logger.error(f"Database initialization error: {e}", exc_info=True)
+        # Don't stop the app - allow it to start
+        st.session_state.db_connection_error = True
+        return False
 
 
 def login_page():
@@ -203,8 +196,21 @@ def login_page():
 
 def main():
     """Main application logic."""
-    # Initialize database
-    initialize_database()
+    # Initialize database (non-blocking - app can start even if DB fails)
+    db_ok = initialize_database()
+    
+    # Show database connection error if needed (but don't block app)
+    if st.session_state.get("db_connection_error", False):
+        st.error("""
+        ⚠️ **Database Connection Issue**
+        
+        The app is running but cannot connect to the database. Please check:
+        - DATABASE_URL is set correctly in Streamlit Cloud Secrets
+        - PostgreSQL server is running and accessible
+        - Network/firewall allows connections from Streamlit Cloud
+        
+        The app will continue to run but database features will not work.
+        """)
     
     # Check authentication FIRST - clear page param if not authenticated
     if not st.session_state.get("authenticated", False):
